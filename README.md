@@ -47,7 +47,7 @@ Change Point Models: Identify break dates (e.g., 1973 OPEC embargo) and paramete
 
 ## Setup
 
-Clone: git clone https://github.com/your-username/brent-oil-price-analysis.git
+Clone: git clone 
 Install: pip install -r requirements.txt (pandas, numpy, matplotlib, seaborn, statsmodels, jupyter).
 Run notebooks: jupyter notebook.
 Compile report: latexmk -pdf docs/Task_1_Report.tex.
