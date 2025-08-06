@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Brent Oil Prices Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios@1.6.2/dist/axios.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.0.1/dist/chartjs-plugin-annotation.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7.23.6/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // Error Boundary Component to catch chart errors
+    class ErrorBoundary extends React.Component {
+      constructor(props) {
+        super(props);
+        this.state = { hasError: false, error: null };
+      }
+
+      static getDerivedStateFromError(error) {
+        return { hasError: true, error };
+      }
+
+      render() {
+        if (this.state.hasError) {
+          return (
+            <div className="text-center text-red-500 mt-4">
+              <h3>Error in {this.props.componentName}: {this.state.error.message}</h3>
+            </div>
+          );
+        }
+        return this.props.children;
+      }
+    }
+
+    // Main App Component
+    function App() {
+      const [prices, setPrices] = useState([]);
+      const [events, setEvents] = useState([]);
+      const [changePoints, setChangePoints] = useState([]);
+      const [metrics, setMetrics] = useState({ volatility: 0, avg_price_change: 0 });
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      useEffect(() => {
+        const fetchData = async () => {
+          try {
+            const [pricesRes, eventsRes, changePointsRes, metricsRes] = await Promise.all([
+              axios.get('http://localhost:5000/api/prices').catch(err => { throw new Error('Prices fetch failed: ' + err.message); }),
+              axios.get('http://localhost:5000/api/events').catch(err => { throw new Error('Events fetch failed: ' + err.message); }),
+              axios.get('http://localhost:5000/api/change_points').catch(err => { throw new Error('Change points fetch failed: ' + err.message); }),
+              axios.get('http://localhost:5000/api/metrics').catch(err => { throw new Error('Metrics fetch failed: ' + err.message); })
+            ]);
+            console.log('Prices:', pricesRes.data);
+            console.log('Events:', eventsRes.data);
+            console.log('Change Points:', changePointsRes.data);
+            console.log('Metrics:', metricsRes.data);
+            setPrices(pricesRes.data);
+            setEvents(eventsRes.data);
+            setChangePoints(changePointsRes.data);
+            setMetrics(metricsRes.data);
+            setLoading(false);
+          } catch (err) {
+            console.error('Fetch Error:', err);
+            setError(`Failed to fetch data: ${err.message}`);
+            setLoading(false);
+          }
+        };
+        fetchData();
+      }, []);
+
+      if (loading) return <div className="text-center text-xl mt-10">Loading...</div>;
+      if (error) return <div className="text-center text-red-500 mt-10">{error}</div>;
+
+      return (
+        <div className="container mx-auto p-4">
+          <h1 className="text-3xl font-bold mb-6 text-center">Brent Oil Prices Dashboard</h1>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <ErrorBoundary componentName="PriceChart">
+              <PriceChart prices={prices} changePoints={changePoints} />
+            </ErrorBoundary>
+            <MetricsCard metrics={metrics} />
+            <EventsTimeline events={events} />
+            <ChangePointsTable changePoints={changePoints} />
+          </div>
+        </div>
+      );
+    }
+
+    // Price Chart Component
+    function PriceChart({ prices, changePoints }) {
+      const canvasRef = useRef(null);
+      const [chartInstance, setChartInstance] = useState(null);
+
+      useEffect(() => {
+        if (canvasRef.current && window.Chart) {
+          if (chartInstance) {
+            chartInstance.destroy();
+          }
+
+          // Register Chart.js components and annotation plugin
+          Chart.register(...Chart.registerables, window.ChartJSAnnotation);
+
+          const ctx = canvasRef.current.getContext('2d');
+          const newChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+              labels: prices.map(p => {
+                const date = new Date(p.Date);
+                return isNaN(date) ? '' : date.toLocaleDateString();
+              }),
+              datasets: [
+                {
+                  label: 'Price ($)',
+                  data: prices.map(p => p.Price),
+                  borderColor: 'rgba(75, 192, 192, 1)',
+                  fill: false,
+                },
+                {
+                  label: 'Log Returns',
+                  data: prices.map(p => p.Log_Returns || 0),
+                  borderColor: 'rgba(255, 99, 132, 1)',
+                  fill: false,
+                  yAxisID: 'y1',
+                }
+              ]
+            },
+            options: {
+              responsive: true,
+              scales: {
+                x: { title: { display: true, text: 'Date' } },
+                y: { title: { display: true, text: 'Price ($)' } },
+                y1: {
+                  type: 'linear',
+                  display: true,
+                  position: 'right',
+                  title: { display: true, text: 'Log Returns' },
+                  grid: { drawOnChartArea: false }
+                }
+              },
+              plugins: {
+                annotation: {
+                  annotations: changePoints.map(cp => ({
+                    type: 'line',
+                    xMin: new Date(cp.date).toLocaleDateString(),
+                    xMax: new Date(cp.date).toLocaleDateString(),
+                    borderColor: 'red',
+                    borderWidth: 2,
+                    label: {
+                      content: `Change Point: ${cp.percent_change}%`,
+                      enabled: true,
+                      position: 'top'
+                    }
+                  }))
+                }
+              }
+            }
+          });
+          setChartInstance(newChart);
+        } else {
+          console.error('Chart.js is not loaded or canvas is unavailable');
+        }
+
+        return () => {
+          if (chartInstance) {
+            chartInstance.destroy();
+          }
+        };
+      }, [prices, changePoints]);
+
+      return (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Price and Log Returns</h2>
+          <canvas ref={canvasRef}></canvas>
+        </div>
+      );
+    }
+
+    // Metrics Card Component
+    function MetricsCard({ metrics }) {
+      return (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Key Metrics</h2>
+          <p><strong>Annualized Volatility:</strong> {(metrics.volatility * 100).toFixed(2)}%</p>
+          <p><strong>Average Price Change:</strong> {metrics.avg_price_change.toFixed(2)}%</p>
+        </div>
+      );
+    }
+
+    // Events Timeline Component
+    function EventsTimeline({ events }) {
+      return (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Events Timeline</h2>
+          <ul className="space-y-4">
+            {events.map((event, index) => (
+              <li key={index} className="border-l-2 border-blue-500 pl-4">
+                <p><strong>{new Date(event.Date).toLocaleDateString()}</strong></p>
+                <p>{event['Event Description']}</p>
+                <p className="text-sm text-gray-600">Category: {event.Category}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      );
+    }
+
+    // Change Points Table Component
+    function ChangePointsTable({ changePoints }) {
+      return (
+        <div className="bg-white p-4 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Change Points</h2>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-gray-100">
+                <th className="p-2">Date</th>
+                <th className="p-2">Mean Before ($)</th>
+                <th className="p-2">Mean After ($)</th>
+                <th className="p-2">Percent Change</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changePoints.map((cp, index) => (
+                <tr key={index} className="border-t">
+                  <td className="p-2">{new Date(cp.date).toLocaleDateString()}</td>
+                  <td className="p-2">{cp.mean_before.toFixed(2)}</td>
+                  <td className="p-2">{cp.mean_after.toFixed(2)}</td>
+                  <td className="p-2">{cp.percent_change.toFixed(2)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    }
+
+    // Render the app
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+  </script>
+</body>
+</html>
