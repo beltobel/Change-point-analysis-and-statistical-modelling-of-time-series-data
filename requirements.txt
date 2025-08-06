@@ -1,3 +1,14 @@
 pandas   == 2.0.3
 matplotlib == 3.7.1
 statsmodels == 0.14.0
+flask==2.3.2
+flask-cors==4.0.0
+numpy==1.26.4
+seaborns == 0.12.2
+statsmodelss == 0.14.0
+pymc ==5.25.1s
+arviz==0.13.0s
+scipy==1.4.1s
+jupyters == 1.0.0s
+flasks == 2.3.2s
+flask-cors == 4.0.0s
